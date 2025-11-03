@@ -3,6 +3,7 @@ package routes
 import (
 	handlers "sale-service/handlers"
 	"sale-service/middlewares"
+	"sale-service/observability"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
@@ -13,24 +14,25 @@ type Route struct {
 	handlers *handlers.Handlers
 }
 
-func NewRoute(db *pgx.Conn) *Route {
+func NewRoute(db *pgx.Conn, businessMetrics *observability.BusinessMetrics) *Route {
 	return &Route{
 		db:       db,
-		handlers: handlers.NewHandlers(db),
+		handlers: handlers.NewHandlers(db, businessMetrics),
 	}
 }
 
 func (r *Route) AddSaleRoutes(router *gin.Engine) {
 	v1 := router.Group("/v1")
 	{
-		inventory := v1.Group("/sale")
-		inventory.Use(middlewares.ClerkAuth(r.db))
+		sale := v1.Group("/sale")
+		sale.Use(middlewares.ClerkAuth(r.db))
 		{
-			inventory.GET("/:id", r.handlers.CreateSaleUnit)
-			inventory.GET("/list", r.handlers.CreateSaleUnit)
-			inventory.POST("/create", r.handlers.CreateSaleUnit)
-			inventory.PUT("/:id", r.handlers.CreateSaleUnit)
-			inventory.DELETE("/:id", r.handlers.CreateSaleUnit)
+			sale.GET("/:id", r.handlers.GetSaleUnit)
+			sale.GET("/list", r.handlers.ListSaleUnit)
+			sale.POST("/create", r.handlers.CreateSaleUnit)
+			// TODO: Add update and delete handlers when implemented
+			// sale.PUT("/:id", r.handlers.UpdateSaleUnit)
+			// sale.DELETE("/:id", r.handlers.DeleteSaleUnit)
 		}
 	}
 }

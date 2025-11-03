@@ -3,10 +3,12 @@ package config
 import "github.com/spf13/viper"
 
 type Config struct {
-	ESEndpoint string `mapstructure:"ES_ENDPOINT"`
-	ESAPIKey   string `mapstructure:"ES_API_KEY"`
-	DBSource   string `mapstructure:"DB_SOURCE"`
-	ClerkKey   string `mapstructure:"CLERK_KEY"`
+	ServiceName              string `mapstructure:"SERVICE_NAME"`
+	OTELExporterOTLPEndpoint string `mapstructure:"OTEL_EXPORTER_OTLP_ENDPOINT"`
+	OTELExporterOTLPHeaders  string `mapstructure:"OTEL_EXPORTER_OTLP_HEADERS"`
+	OTELResourceAttreibutes  string `mapstructure:"OTEL_RESOURCE_ATTRIBUTES"`
+	DBSource                 string `mapstructure:"DB_SOURCE"`
+	ClerkKey                 string `mapstructure:"CLERK_KEY"`
 }
 
 func LoadConfig(path string) (config Config, err error) {

@@ -10,6 +10,6 @@ COPY . .
 
 RUN ls -lhR .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -v -o ./pos-service .
+RUN CGO_ENABLED=0 GOOS=linux go build -v -o ./sale-service .
 
-CMD ["./pos-service"]
+CMD ["./sale-service"]

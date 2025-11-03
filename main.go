@@ -53,7 +53,7 @@ func main() {
 		attempt++
 
 	}
-	router := api.NewServer(conn)
-	router.Run(":15350")
+	router := api.NewServer(conn, config.ServiceName, "1.0.0", config.OTELExporterOTLPEndpoint, config.OTELExporterOTLPHeaders)
+	router.Run(":15350", config.ServiceName)
 
 }
