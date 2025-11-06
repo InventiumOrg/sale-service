@@ -12,4 +12,7 @@ RUN ls -lhR .
 
 RUN CGO_ENABLED=0 GOOS=linux go build -v -o ./sale-service .
 
+# Create logs directory
+RUN mkdir -p /logs
+
 CMD ["./sale-service"]

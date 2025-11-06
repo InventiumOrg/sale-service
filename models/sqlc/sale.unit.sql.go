@@ -14,13 +14,13 @@ INSERT INTO sale_unit (
     name, pos_id, price, sale_recipe_id
 ) VALUES (
     $1, $2, $3, $4
-) RETURNING id, name, pos_id, price, sale_recipe_id, "createdAt"
+) RETURNING id, name, pos_id, price, sale_recipe_id, created_at
 `
 
 type CreateSaleUnitParams struct {
 	Name         string
 	PosID        int32
-	Price        string
+	Price        int32
 	SaleRecipeID int32
 }
 
@@ -48,17 +48,17 @@ DELETE FROM sale_unit
 WHERE id = $1
 `
 
-func (q *Queries) DeleteSaleUnit(ctx context.Context, id int32) error {
+func (q *Queries) DeleteSaleUnit(ctx context.Context, id int64) error {
 	_, err := q.db.Exec(ctx, deleteSaleUnit, id)
 	return err
 }
 
 const getSaleUnit = `-- name: GetSaleUnit :one
-SELECT id, name, pos_id, price, sale_recipe_id, "createdAt" FROM sale_unit
+SELECT id, name, pos_id, price, sale_recipe_id, created_at FROM sale_unit
 WHERE id = $1
 `
 
-func (q *Queries) GetSaleUnit(ctx context.Context, id int32) (SaleUnit, error) {
+func (q *Queries) GetSaleUnit(ctx context.Context, id int64) (SaleUnit, error) {
 	row := q.db.QueryRow(ctx, getSaleUnit, id)
 	var i SaleUnit
 	err := row.Scan(
@@ -84,10 +84,10 @@ type ListSaleUnitParams struct {
 }
 
 type ListSaleUnitRow struct {
-	ID           int32
+	ID           int64
 	Name         string
 	PosID        int32
-	Price        string
+	Price        int32
 	SaleRecipeID int32
 }
 
@@ -124,14 +124,14 @@ SET name = $2,
     price = $4,
     sale_recipe_id = $5
 WHERE id = $1
-RETURNING id, name, pos_id, price, sale_recipe_id, "createdAt"
+RETURNING id, name, pos_id, price, sale_recipe_id, created_at
 `
 
 type UpdateSaleUnitParams struct {
-	ID           int32
+	ID           int64
 	Name         string
 	PosID        int32
-	Price        string
+	Price        int32
 	SaleRecipeID int32
 }
 

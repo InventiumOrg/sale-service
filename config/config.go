@@ -9,6 +9,10 @@ type Config struct {
 	OTELResourceAttreibutes  string `mapstructure:"OTEL_RESOURCE_ATTRIBUTES"`
 	DBSource                 string `mapstructure:"DB_SOURCE"`
 	ClerkKey                 string `mapstructure:"CLERK_KEY"`
+	LogFilePath              string `mapstructure:"LOG_FILE_PATH"`
+	LokiURL                  string `mapstructure:"LOKI_URL"`
+	SyslogAddress            string `mapstructure:"SYSLOG_ADDRESS"`
+	SyslogNetwork            string `mapstructure:"SYSLOG_NETWORK"`
 }
 
 func LoadConfig(path string) (config Config, err error) {

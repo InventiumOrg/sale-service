@@ -14,4 +14,4 @@ loaddata:
 	PGPASSWORD=secret psql -h localhost -U root -d inventium -f data/sql/inventium.sql
 runcontainer:
 	podman run --network inventium --name sale-service -p 15350:15350 -d -e DB_SOURCE="postgresql://root:secret@postgres-1:5432/sale-service?sslmode=disable" -e CLERK_KEY="sk_test_XhHg2KNAIqm9I65JwOgQbLajZj6UqeeLTnpjx1p4oa" sale-service:1.0.0
-.PHONY: postgres createdb dropdb migrateup migratedown sqlc loaddata runcontainer
+.PHONY: postgres createdb dropdb migrateup migratedown sqlc loaddata runcontainer testlogging testlogging-docker observability-up observability-down observability-logs run-with-logs test-otlp-logs test-loki-logs test-syslog-logs

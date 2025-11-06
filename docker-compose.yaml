@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: sale-service
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./data:/docker-entrypoint-initdb.d
+    networks:
+      - inventium
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U root -d sale-service"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  sale-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sale-service
+    ports:
+      - "15350:15350"
+    environment:
+      DB_SOURCE: "postgresql://root:secret@postgres:5432/sale-service?sslmode=disable"
+      CLERK_KEY: "sk_test_XhHg2KNAIqm9I65JwOgQbLajZj6UqeeLTnpjx1p4oa"
+      SERVICE_NAME: "sale-service"
+      OTEL_RESOURCE_ATTRIBUTES: "service.name=sale-service,service.namespace=inventium,deployment.environment=local"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "localhost:4318"
+      LOG_FILE_PATH: "/logs/otel-logs.json"
+    volumes:
+      - ./logs:/logs  # Mount host logs directory to container /logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - inventium
+    restart: unless-stopped
+
+networks:
+  inventium:
+    external: true
+
+volumes:
+  postgres_data:

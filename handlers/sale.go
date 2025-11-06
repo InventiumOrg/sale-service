@@ -87,7 +87,7 @@ func (h *Handlers) GetSaleUnit(ctx *gin.Context) {
 
 	// Measure database operation duration
 	dbStart := time.Now()
-	saleUnit, err := h.queries.GetSaleUnit(spanCtx, int32(id))
+	saleUnit, err := h.queries.GetSaleUnit(spanCtx, int64(id))
 	dbDuration := time.Since(dbStart).Seconds()
 
 	// Record database operation metrics

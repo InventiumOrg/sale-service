@@ -1,14 +1,14 @@
 CREATE TABLE "sale_unit" (
-  "id" int PRIMARY KEY,
+  "id" bigserial PRIMARY KEY,
   "name" varchar NOT NULL,
   "pos_id" int NOT NULL,
-  "price" varchar NOT NULL,
+  "price" int NOT NULL,
   "sale_recipe_id" int NOT NULL,
-  "createdAt" date NOT NULL
+  "created_at" timestamptz NOT NULL DEFAULT (now())
 );
 
 CREATE TABLE "sale_recipe" (
-  "id" int PRIMARY KEY,
+  "id" bigserial PRIMARY KEY,
   "ingredients" int[] NOT NULL
 );
 

@@ -9,15 +9,15 @@ import (
 )
 
 type SaleRecipe struct {
-	ID          int32
+	ID          int64
 	Ingredients []int32
 }
 
 type SaleUnit struct {
-	ID           int32
+	ID           int64
 	Name         string
 	PosID        int32
-	Price        string
+	Price        int32
 	SaleRecipeID int32
-	CreatedAt    pgtype.Date
+	CreatedAt    pgtype.Timestamptz
 }
