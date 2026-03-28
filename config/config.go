@@ -1,6 +1,10 @@
 package config
 
-import "github.com/spf13/viper"
+import (
+	"fmt"
+
+	"github.com/spf13/viper"
+)
 
 type Config struct {
 	ServiceName              string `mapstructure:"SERVICE_NAME"`
@@ -16,15 +20,22 @@ type Config struct {
 }
 
 func LoadConfig(path string) (config Config, err error) {
-	viper.AddConfigPath(path)
-	viper.SetConfigName("app")
-	viper.SetConfigType("env")
 	viper.AutomaticEnv()
 
-	err = viper.ReadInConfig()
+	_ = viper.BindEnv("SERVICE_NAME")
+	_ = viper.BindEnv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	_ = viper.BindEnv("OTEL_EXPORTER_OTLP_HEADERS")
+	_ = viper.BindEnv("OTEL_RESOURCE_ATTRIBUTES")
+	_ = viper.BindEnv("DB_SOURCE")
+	_ = viper.BindEnv("CLERK_KEY")
+	_ = viper.BindEnv("LOG_FILE_PATH")
+	_ = viper.BindEnv("LOKI_URL")
+	_ = viper.BindEnv("SYSLOG_ADDRESS")
+	_ = viper.BindEnv("SYSLOG_NETWORK")
+
+	err = viper.Unmarshal(&config)
 	if err != nil {
-		return
+		return config, fmt.Errorf("Failed to unmarshal config: %w", err)
 	}
-	viper.Unmarshal(&config)
 	return config, nil
 }
