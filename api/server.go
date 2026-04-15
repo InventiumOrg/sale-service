@@ -16,12 +16,12 @@ import (
 )
 
 type Server struct {
-	router          *gin.Engine
-	routes          *routes.Route
-	db              *pgx.Conn
-	otelShutdown    func(context.Context) error
-	metrics         *observability.AppMetrics
-	businessMetrics *observability.BusinessMetrics
+	router            *gin.Engine
+	routes            *routes.Route
+	db                *pgx.Conn
+	otelShutdown      func(context.Context) error
+	metrics           *observability.AppMetrics
+	prometheusMetrics *observability.PrometheusMetrics
 }
 
 func NewServer(db *pgx.Conn, serviceName, serviceVersion, otelEndpoint, otelHeaders string) *Server {
@@ -51,37 +51,41 @@ func NewServer(db *pgx.Conn, serviceName, serviceVersion, otelEndpoint, otelHead
 		slog.Info("Metrics initialized successfully")
 	}
 
-	// Initialize business metrics
-	businessMetrics, err := observability.CreateBusinessMetrics()
-	if err != nil {
-		slog.Error("Failed to create business metrics", slog.Any("err", err))
-	} else {
-		server.businessMetrics = businessMetrics
-		slog.Info("Business metrics initialized successfully")
-	}
+	// Initialize Prometheus metrics
+	prometheusMetrics := observability.NewPrometheusMetrics(serviceName)
+	server.prometheusMetrics = prometheusMetrics
+	slog.Info("Prometheus metrics initialized successfully")
 
-	server.routes = routes.NewRoute(db, businessMetrics)
+	server.routes = routes.NewRoute(db, prometheusMetrics)
 	return server
 }
 
-func (s *Server) Run(addr string, serviceName string) error {
-	s.router.SetTrustedProxies(nil)
+func (s *Server) Run(addr string, serviceName string, corsAllowOrigins []string) error {
+	_ = s.router.SetTrustedProxies(nil)
 
 	// Add OpenTelemetry middleware
 	s.router.Use(otelgin.Middleware(serviceName))
 
-	// Add metrics middleware
+	// Add Prometheus metrics middleware
+	if s.prometheusMetrics != nil {
+		s.router.Use(s.prometheusMetrics.PrometheusMiddleware())
+	}
+
+	// Add metrics middleware (OpenTelemetry)
 	if s.metrics != nil {
 		s.router.Use(s.metricsMiddleware())
 	}
 
 	s.router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3000"},
+		AllowOrigins:     corsAllowOrigins,
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"},
 		AllowHeaders:     []string{"Origins", "Content-Type", "Authorization", "Bearer"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
 	}))
+
+	// Setup Prometheus /metrics endpoint
+	observability.SetupPrometheusEndpoint(s.router)
 
 	// Add health check routes (no auth required)
 	s.routes.AddHealthRoutes(s.router)

@@ -1,15 +1,8 @@
-CREATE TABLE "sale_unit" (
-  "id" int PRIMARY KEY,
-  "name" varchar NOT NULL,
+CREATE TABLE "sale" (
+  "id" bigserial PRIMARY KEY,
   "pos_id" int NOT NULL,
-  "price" varchar NOT NULL,
-  "sale_recipe_id" int NOT NULL,
-  "createdAt" date NOT NULL
+  "price" int NOT NULL,
+  "recipe_id" int NOT NULL,
+  "order_id" int NOT NULL,
+  "created_at" timestamptz NOT NULL DEFAULT (now())
 );
-
-CREATE TABLE "sale_recipe" (
-  "id" int PRIMARY KEY,
-  "ingredients" int[] NOT NULL
-);
-
-ALTER TABLE "sale_unit" ADD FOREIGN KEY ("sale_recipe_id") REFERENCES "sale_recipe" ("id");

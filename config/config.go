@@ -1,26 +1,55 @@
 package config
 
-import "github.com/spf13/viper"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/spf13/viper"
+)
 
 type Config struct {
 	ServiceName              string `mapstructure:"SERVICE_NAME"`
 	OTELExporterOTLPEndpoint string `mapstructure:"OTEL_EXPORTER_OTLP_ENDPOINT"`
 	OTELExporterOTLPHeaders  string `mapstructure:"OTEL_EXPORTER_OTLP_HEADERS"`
-	OTELResourceAttreibutes  string `mapstructure:"OTEL_RESOURCE_ATTRIBUTES"`
+	OTELResourceAttributes   string `mapstructure:"OTEL_RESOURCE_ATTRIBUTES"`
 	DBSource                 string `mapstructure:"DB_SOURCE"`
-	ClerkKey                 string `mapstructure:"CLERK_KEY"`
+	CORSAllowedOrigins       string `mapstructure:"CORS_ALLOWED_ORIGINS"`
+}
+
+// CORSAllowOriginList parses CORS_ALLOWED_ORIGINS as a comma-separated list.
+// Defaults to http://localhost:8000 when unset or empty.
+func (c Config) CORSAllowOriginList() []string {
+	s := strings.TrimSpace(c.CORSAllowedOrigins)
+	if s == "" {
+		return []string{"http://localhost:8080"}
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		return []string{"http://localhost:8080"}
+	}
+	return out
 }
 
 func LoadConfig(path string) (config Config, err error) {
-	viper.AddConfigPath(path)
-	viper.SetConfigName("app")
-	viper.SetConfigType("env")
 	viper.AutomaticEnv()
 
-	err = viper.ReadInConfig()
+	_ = viper.BindEnv("SERVICE_NAME")
+	_ = viper.BindEnv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	_ = viper.BindEnv("OTEL_EXPORTER_OTLP_HEADERS")
+	_ = viper.BindEnv("OTEL_RESOURCE_ATTRIBUTES")
+	_ = viper.BindEnv("DB_SOURCE")
+	_ = viper.BindEnv("CORS_ALLOWED_ORIGINS")
+
+	err = viper.Unmarshal(&config)
 	if err != nil {
-		return
+		return config, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
-	viper.Unmarshal(&config)
 	return config, nil
 }

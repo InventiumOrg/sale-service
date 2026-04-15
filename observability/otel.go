@@ -3,8 +3,10 @@ package observability
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -74,7 +76,7 @@ func newResource(serviceName, serviceVersion string) (*resource.Resource, error)
 		semconv.SchemaURL,
 		semconv.ServiceName(serviceName),
 		semconv.ServiceVersion(serviceVersion),
-		semconv.ServiceInstanceID("sale-service-1"),
+		semconv.ServiceInstanceID("sale-service"),
 	), nil
 }
 
@@ -195,6 +197,40 @@ func GetLogger(name string) *slog.Logger {
 	})).With("service", name)
 }
 
+// SetupFileLogger configures slog to write JSON logs to a file
+func SetupFileLogger(logFilePath string) error {
+	// Create logs directory if it doesn't exist
+	logDir := filepath.Dir(logFilePath)
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		return err
+	}
+
+	// Open log file for writing (create if not exists, append if exists)
+	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return err
+	}
+
+	// Create a multi-writer to write to both stdout and file
+	multiWriter := io.MultiWriter(os.Stdout, logFile)
+
+	// Create JSON handler that writes to both stdout and file
+	jsonHandler := slog.NewJSONHandler(multiWriter, &slog.HandlerOptions{
+		Level:     slog.LevelInfo,
+		AddSource: true,
+	})
+
+	// Set the default logger
+	logger := slog.New(jsonHandler)
+	slog.SetDefault(logger)
+
+	slog.Info("File logging configured",
+		slog.String("log_file", logFilePath),
+		slog.String("log_dir", logDir))
+
+	return nil
+}
+
 // CreateMetrics creates and returns common application metrics
 func CreateMetrics() (*AppMetrics, error) {
 	meter := otel.Meter("sale-service")
@@ -237,98 +273,69 @@ type AppMetrics struct {
 	DBConnections   metric.Int64UpDownCounter
 }
 
-// CreateBusinessMetrics creates business-specific metrics for the sale service
-func CreateBusinessMetrics() (*BusinessMetrics, error) {
-	meter := otel.Meter("sale-service-business")
-
-	// Sale Unit Operations
-	saleUnitOperations, err := meter.Int64Counter(
-		"sale_unit_operations_total",
-		metric.WithDescription("Total number of sale unit operations"),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	saleUnitCreated, err := meter.Int64Counter(
-		"sale_units_created_total",
-		metric.WithDescription("Total number of sale units created"),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	saleUnitRetrievals, err := meter.Int64Counter(
-		"sale_unit_retrievals_total",
-		metric.WithDescription("Total number of sale unit retrievals"),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	saleUnitListRequests, err := meter.Int64Counter(
-		"sale_unit_list_requests_total",
-		metric.WithDescription("Total number of sale unit list requests"),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	// Database operation metrics
-	dbOperationDuration, err := meter.Float64Histogram(
-		"database_operation_duration_seconds",
-		metric.WithDescription("Duration of database operations in seconds"),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	dbOperationErrors, err := meter.Int64Counter(
-		"database_operation_errors_total",
-		metric.WithDescription("Total number of database operation errors"),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	// Authentication metrics
-	authenticationAttempts, err := meter.Int64Counter(
-		"authentication_attempts_total",
-		metric.WithDescription("Total number of authentication attempts"),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	// Business logic metrics
-	activeSaleUnits, err := meter.Int64UpDownCounter(
-		"active_sale_units_count",
-		metric.WithDescription("Current number of active sale units"),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return &BusinessMetrics{
-		SaleUnitOperations:     saleUnitOperations,
-		SaleUnitCreated:        saleUnitCreated,
-		SaleUnitRetrievals:     saleUnitRetrievals,
-		SaleUnitListRequests:   saleUnitListRequests,
-		DBOperationDuration:    dbOperationDuration,
-		DBOperationErrors:      dbOperationErrors,
-		AuthenticationAttempts: authenticationAttempts,
-		ActiveSaleUnits:        activeSaleUnits,
-	}, nil
+// LogConfig holds configuration for file logging
+type LogConfig struct {
+	FilePath   string
+	MaxSizeMB  int64
+	MaxBackups int
+	MaxAgeDays int
+	Compress   bool
 }
 
-// BusinessMetrics holds business-specific metrics
-type BusinessMetrics struct {
-	SaleUnitOperations     metric.Int64Counter
-	SaleUnitCreated        metric.Int64Counter
-	SaleUnitRetrievals     metric.Int64Counter
-	SaleUnitListRequests   metric.Int64Counter
-	DBOperationDuration    metric.Float64Histogram
-	DBOperationErrors      metric.Int64Counter
-	AuthenticationAttempts metric.Int64Counter
-	ActiveSaleUnits        metric.Int64UpDownCounter
+// DefaultLogConfig returns a default logging configuration
+func DefaultLogConfig() LogConfig {
+	return LogConfig{
+		FilePath:   "/logs/otel-logs.json",
+		MaxSizeMB:  100, // 100MB per file
+		MaxBackups: 5,   // Keep 5 backup files
+		MaxAgeDays: 30,  // Keep logs for 30 days
+		Compress:   true,
+	}
+}
+
+// SetupAdvancedFileLogger configures slog with advanced file logging features
+func SetupAdvancedFileLogger(config LogConfig) error {
+	// Create logs directory if it doesn't exist
+	logDir := filepath.Dir(config.FilePath)
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		return err
+	}
+
+	// Open log file for writing (create if not exists, append if exists)
+	logFile, err := os.OpenFile(config.FilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return err
+	}
+
+	// Create a multi-writer to write to both stdout and file
+	multiWriter := io.MultiWriter(os.Stdout, logFile)
+
+	// Create JSON handler with enhanced options
+	jsonHandler := slog.NewJSONHandler(multiWriter, &slog.HandlerOptions{
+		Level:     slog.LevelInfo,
+		AddSource: true,
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			// Add timestamp in ISO format
+			if a.Key == slog.TimeKey {
+				return slog.Attr{
+					Key:   "timestamp",
+					Value: slog.StringValue(time.Now().UTC().Format(time.RFC3339)),
+				}
+			}
+			return a
+		},
+	})
+
+	// Set the default logger
+	logger := slog.New(jsonHandler)
+	slog.SetDefault(logger)
+
+	slog.Info("Advanced file logging configured",
+		slog.String("log_file", config.FilePath),
+		slog.String("log_dir", logDir),
+		slog.Int64("max_size_mb", config.MaxSizeMB),
+		slog.Int("max_backups", config.MaxBackups),
+		slog.Int("max_age_days", config.MaxAgeDays))
+
+	return nil
 }

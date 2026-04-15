@@ -1,11 +1,11 @@
 package handlers
 
 import (
-	"fmt"
 	"log/slog"
 	"net/http"
 	models "sale-service/models/sqlc"
 	"sale-service/observability"
+	"sale-service/utils"
 	"strconv"
 	"time"
 
@@ -13,62 +13,36 @@ import (
 	"github.com/jackc/pgx/v5"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 )
 
 type Handlers struct {
-	queries         *models.Queries
-	tracer          trace.Tracer
-	db              *pgx.Conn
-	businessMetrics *observability.BusinessMetrics
+	queries           *models.Queries
+	tracer            trace.Tracer
+	db                *pgx.Conn
+	prometheusMetrics *observability.PrometheusMetrics
 }
 
-func NewHandlers(db *pgx.Conn, businessMetrics *observability.BusinessMetrics) *Handlers {
+func NewHandlers(db *pgx.Conn, prometheusMetrics *observability.PrometheusMetrics) *Handlers {
 	return &Handlers{
-		db:              db,
-		queries:         models.New(db),
-		tracer:          otel.Tracer("sale-service/handlers"),
-		businessMetrics: businessMetrics,
+		db:                db,
+		queries:           models.New(db),
+		tracer:            otel.Tracer("sale-service/handlers"),
+		prometheusMetrics: prometheusMetrics,
 	}
 }
 
 func (h *Handlers) GetSaleUnit(ctx *gin.Context) {
 	// Start a new span for this operation
-	spanCtx, span := h.tracer.Start(ctx.Request.Context(), "Get Sale Unit")
+	_, span := h.tracer.Start(ctx.Request.Context(), "GetSaleUnit")
 	defer span.End()
 
-	// Record authentication attempt
-	if h.businessMetrics != nil {
-		h.businessMetrics.AuthenticationAttempts.Add(spanCtx, 1,
-			metric.WithAttributes(attribute.String("operation", "get_sale_unit")))
-	}
-
-	_, existed := ctx.Get("claims")
-	if !existed {
-		span.RecordError(fmt.Errorf("claims not found in context"))
-		span.SetAttributes(attribute.String("error", "claims_not_found"))
-
-		// Record authentication failure
-		if h.businessMetrics != nil {
-			h.businessMetrics.AuthenticationAttempts.Add(spanCtx, 1,
-				metric.WithAttributes(
-					attribute.String("operation", "get_sale_unit"),
-					attribute.String("status", "failed"),
-				))
-		}
-
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Claims not found in context",
-		})
-		return
-	}
-
+	// Get sale unit ID from URL parameter
 	idStr := ctx.Param("id")
-	id, err := strconv.ParseInt(idStr, 10, 32)
+	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid Sale Unit ID format",
+			"error": "Invalid sale unit ID",
 		})
 		return
 	}
@@ -76,61 +50,31 @@ func (h *Handlers) GetSaleUnit(ctx *gin.Context) {
 	// Add attributes to the span
 	span.SetAttributes(attribute.Int64("saleUnit.id", id))
 
-	// Record business operation
-	if h.businessMetrics != nil {
-		h.businessMetrics.SaleUnitOperations.Add(spanCtx, 1,
-			metric.WithAttributes(
-				attribute.String("operation", "get"),
-				attribute.Int64("sale_unit_id", id),
-			))
-	}
-
-	// Measure database operation duration
 	dbStart := time.Now()
-	saleUnit, err := h.queries.GetSaleUnit(spanCtx, int32(id))
-	dbDuration := time.Since(dbStart).Seconds()
+	saleUnit, err := h.queries.GetSaleUnit(ctx, int64(id))
+	dbDuration := time.Since(dbStart)
 
-	// Record database operation metrics
-	if h.businessMetrics != nil {
-		h.businessMetrics.DBOperationDuration.Record(spanCtx, dbDuration,
-			metric.WithAttributes(
-				attribute.String("operation", "get_sale_unit"),
-				attribute.String("table", "sale_units"),
-			))
+	// Record database operation duration (Prometheus)
+	if h.prometheusMetrics != nil {
+		h.prometheusMetrics.RecordDBOperation("get", "sale_units", dbDuration, err)
 	}
 
 	if err != nil {
+		slog.Error("Got an error while getting sale unit: ", slog.Any("err", err.Error()))
 		span.RecordError(err)
-		span.SetAttributes(attribute.String("error", "database_query_failed"))
-
-		// Record database error
-		if h.businessMetrics != nil {
-			h.businessMetrics.DBOperationErrors.Add(spanCtx, 1,
-				metric.WithAttributes(
-					attribute.String("operation", "get_sale_unit"),
-					attribute.String("error_type", "query_failed"),
-				))
-		}
-
-		slog.Error("Got an error while getting sale units: ", slog.Any(err.Error(), "err"))
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to get sale unit",
 		})
 		return
 	}
 
-	// Record successful retrieval
-	if h.businessMetrics != nil {
-		h.businessMetrics.SaleUnitRetrievals.Add(spanCtx, 1,
-			metric.WithAttributes(
-				attribute.String("sale_unit_name", saleUnit.Name),
-				attribute.String("status", "success"),
-			))
+	// Record successful retrieval (Prometheus)
+	if h.prometheusMetrics != nil {
+		h.prometheusMetrics.RecordSaleUnitOperation("get", saleUnit.ID)
 	}
 
 	// Record successful operation
 	span.SetAttributes(
-		attribute.String("saleUnit.name", saleUnit.Name),
 		attribute.String("operation.status", "success"),
 	)
 
@@ -142,34 +86,8 @@ func (h *Handlers) GetSaleUnit(ctx *gin.Context) {
 
 func (h *Handlers) ListSaleUnit(ctx *gin.Context) {
 	// Start a new span for this operation
-	spanCtx, span := h.tracer.Start(ctx.Request.Context(), "List Sale Units")
+	_, span := h.tracer.Start(ctx.Request.Context(), "ListSaleUnits")
 	defer span.End()
-
-	// Record authentication attempt
-	if h.businessMetrics != nil {
-		h.businessMetrics.AuthenticationAttempts.Add(spanCtx, 1,
-			metric.WithAttributes(attribute.String("operation", "list_sale_units")))
-	}
-
-	_, existed := ctx.Get("claims")
-	if !existed {
-		span.RecordError(fmt.Errorf("claims not found in context"))
-		span.SetAttributes(attribute.String("error", "claims_not_found"))
-
-		// Record authentication failure
-		if h.businessMetrics != nil {
-			h.businessMetrics.AuthenticationAttempts.Add(spanCtx, 1,
-				metric.WithAttributes(
-					attribute.String("operation", "list_sale_units"),
-					attribute.String("status", "failed"),
-				))
-		}
-
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Claims not found in context",
-		})
-		return
-	}
 
 	// Add attributes to the span
 	span.SetAttributes(
@@ -177,257 +95,101 @@ func (h *Handlers) ListSaleUnit(ctx *gin.Context) {
 		attribute.Int("saleUnit.offset", 0),
 	)
 
-	// Record list request
-	if h.businessMetrics != nil {
-		h.businessMetrics.SaleUnitListRequests.Add(spanCtx, 1,
-			metric.WithAttributes(
-				attribute.Int("limit", 10),
-				attribute.Int("offset", 0),
-			))
-	}
-
-	// Measure database operation duration
 	dbStart := time.Now()
-	saleUnits, err := h.queries.ListSaleUnit(spanCtx, models.ListSaleUnitParams{
+	saleUnits, err := h.queries.ListSaleUnit(ctx, models.ListSaleUnitParams{
 		Limit:  10,
 		Offset: 0,
 	})
-	dbDuration := time.Since(dbStart).Seconds()
+	dbDuration := time.Since(dbStart)
 
-	// Record database operation metrics
-	if h.businessMetrics != nil {
-		h.businessMetrics.DBOperationDuration.Record(spanCtx, dbDuration,
-			metric.WithAttributes(
-				attribute.String("operation", "list_sale_units"),
-				attribute.String("table", "sale_units"),
-			))
+	// Record database operation duration (Prometheus)
+	if h.prometheusMetrics != nil {
+		h.prometheusMetrics.RecordDBOperation("list", "sale_units", dbDuration, err)
 	}
 
 	if err != nil {
-		span.RecordError(err)
-		span.SetAttributes(attribute.String("error", "database_query_failed"))
-
-		// Record database error
-		if h.businessMetrics != nil {
-			h.businessMetrics.DBOperationErrors.Add(spanCtx, 1,
-				metric.WithAttributes(
-					attribute.String("operation", "list_sale_units"),
-					attribute.String("error_type", "query_failed"),
-				))
-		}
-
 		slog.Error("Got an error while listing sale units: ", slog.Any("err", err.Error()))
+		span.RecordError(err)
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to list sale units",
 		})
 		return
 	}
 
-	// Record successful operation
+	// Record successful list operation (Prometheus)
+	if h.prometheusMetrics != nil {
+		h.prometheusMetrics.RecordSaleUnitOperation("list", 0)
+	}
+
 	span.SetAttributes(
 		attribute.Int("saleUnit.count", len(saleUnits)),
 		attribute.String("operation.status", "success"),
 	)
 
-	// Record business metrics for successful list operation
-	if h.businessMetrics != nil {
-		h.businessMetrics.SaleUnitOperations.Add(spanCtx, 1,
-			metric.WithAttributes(
-				attribute.String("operation", "list"),
-				attribute.Int("result_count", len(saleUnits)),
-			))
-	}
-
 	ctx.JSON(200, gin.H{
 		"message": "List Sale Units Successfully",
 		"data":    saleUnits,
+		"count":   len(saleUnits),
 	})
 }
 
-// func (h *Handlers) UpdateStorageRoom(ctx *gin.Context) {
-// 	_, existed := ctx.Get("claims")
-// 	if !existed {
-// 		ctx.JSON(http.StatusInternalServerError, gin.H{
-// 			"error": "Claims not found in context",
-// 		})
-// 		return
-// 	}
-
-// 	// Get inventory ID from URL parameter
-// 	idStr := ctx.Param("id")
-// 	id, err := strconv.ParseInt(idStr, 10, 64)
-// 	if err != nil {
-// 		ctx.JSON(http.StatusBadRequest, gin.H{
-// 			"error": "Invalid storage room ID",
-// 		})
-// 		return
-// 	}
-
-// 	// Start database transaction
-// 	tx, err := h.db.Begin(ctx)
-// 	if err != nil {
-// 		slog.Error("Failed to start transaction", slog.Any("err", err.Error()))
-// 		ctx.JSON(http.StatusInternalServerError, gin.H{
-// 			"error": "Failed to start transaction",
-// 		})
-// 		return
-// 	}
-// 	defer tx.Rollback(ctx) // This will be ignored if tx.Commit() succeeds
-
-// 	// Create queries with transaction
-// 	qtx := h.queries.WithTx(tx)
-
-// 	// Check if storage room exists before updating
-// 	_, err = qtx.GetStorageRoom(ctx, int32(id))
-// 	if err != nil {
-// 		slog.Error("Storage room not found", slog.Any("err", err.Error()))
-// 		ctx.JSON(http.StatusNotFound, gin.H{
-// 			"error": "Storage room not found",
-// 		})
-// 		return
-// 	}
-
-// 	// Parse WarehouseID from string to int32
-// 	warehouseIDStr := ctx.PostForm("WarehouseId")
-// 	warehouseID, err := strconv.ParseInt(warehouseIDStr, 10, 32)
-// 	if err != nil {
-// 		ctx.JSON(http.StatusBadRequest, gin.H{
-// 			"error": "Invalid warehouse ID format",
-// 		})
-// 		return
-// 	}
-
-// 	// Update storage room within transaction
-// 	param := models.UpdateStorageRoomParams{
-// 		ID:          int32(id),
-// 		Name:        ctx.PostForm("Name"),
-// 		Number:      ctx.PostForm("Number"),
-// 		WarehouseID: int32(warehouseID),
-// 	}
-
-// 	storageRoom, err := qtx.UpdateStorageRoom(ctx, param)
-// 	if err != nil {
-// 		slog.Error("Could not update storage room", slog.Any("err", err.Error()))
-// 		ctx.JSON(http.StatusInternalServerError, gin.H{
-// 			"error": "Failed to update storage room",
-// 		})
-// 		return
-// 	}
-
-// 	// Commit transaction
-// 	if err := tx.Commit(ctx); err != nil {
-// 		slog.Error("Failed to commit transaction", slog.Any("err", err.Error()))
-// 		ctx.JSON(http.StatusInternalServerError, gin.H{
-// 			"error": "Failed to commit transaction",
-// 		})
-// 		return
-// 	}
-
-// 	ctx.JSON(200, gin.H{
-// 		"message": "Update Storage Room Successfully",
-// 		"data":    storageRoom,
-// 	})
-// }
-
 func (h *Handlers) CreateSaleUnit(ctx *gin.Context) {
 	// Start a new span for this operation
-	spanCtx, span := h.tracer.Start(ctx.Request.Context(), "Create Sale Unit")
+	_, span := h.tracer.Start(ctx.Request.Context(), "CreateSaleUnit")
 	defer span.End()
 
-	// Record authentication attempt
-	if h.businessMetrics != nil {
-		h.businessMetrics.AuthenticationAttempts.Add(spanCtx, 1,
-			metric.WithAttributes(attribute.String("operation", "create_sale_unit")))
-	}
-
-	_, existed := ctx.Get("claims")
-	if !existed {
-		span.RecordError(fmt.Errorf("claims not found in context"))
-		span.SetAttributes(attribute.String("error", "claims_not_found"))
-
-		// Record authentication failure
-		if h.businessMetrics != nil {
-			h.businessMetrics.AuthenticationAttempts.Add(spanCtx, 1,
-				metric.WithAttributes(
-					attribute.String("operation", "create_sale_unit"),
-					attribute.String("status", "failed"),
-				))
-		}
-
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Claims not found in context",
-		})
+	id, ok := utils.ParseSaleUnitID(ctx, "create sale unit rejected")
+	if !ok {
 		return
 	}
 
-	unitName := ctx.PostForm("Name")
-	param := models.CreateSaleUnitParams{
-		Name: unitName,
+	posID, price, recipeID, orderID, ok := utils.SaleFormFields(ctx, "create sale unit rejected", &id)
+	if !ok {
+		return
+	}
+
+	params := models.CreateSaleUnitParams{
+		PosID:    posID,
+		Price:    price,
+		RecipeID: recipeID,
+		OrderID:  orderID,
 	}
 
 	// Add attributes to the span
-	span.SetAttributes(attribute.String("saleUnit.name", unitName))
+	span.SetAttributes(
+		attribute.Int64("saleUnit.pos_id", int64(posID)),
+		attribute.Int64("saleUnit.price", int64(price)),
+		attribute.Int64("saleUnit.recipe_id", int64(recipeID)),
+		attribute.Int64("saleUnit.order_id", int64(orderID)),
+	)
 
-	// Record business operation
-	if h.businessMetrics != nil {
-		h.businessMetrics.SaleUnitOperations.Add(spanCtx, 1,
-			metric.WithAttributes(
-				attribute.String("operation", "create"),
-				attribute.String("sale_unit_name", unitName),
-			))
-	}
-
-	// Measure database operation duration
 	dbStart := time.Now()
-	saleUnit, err := h.queries.CreateSaleUnit(spanCtx, param)
-	dbDuration := time.Since(dbStart).Seconds()
+	saleUnit, err := h.queries.CreateSaleUnit(ctx, params)
+	dbDuration := time.Since(dbStart)
 
-	// Record database operation metrics
-	if h.businessMetrics != nil {
-		h.businessMetrics.DBOperationDuration.Record(spanCtx, dbDuration,
-			metric.WithAttributes(
-				attribute.String("operation", "create_sale_unit"),
-				attribute.String("table", "sale_units"),
-			))
+	// Record database operation duration (Prometheus)
+	if h.prometheusMetrics != nil {
+		h.prometheusMetrics.RecordDBOperation("create", "sale_units", dbDuration, err)
 	}
 
 	if err != nil {
-		span.RecordError(err)
-		span.SetAttributes(attribute.String("error", "database_insert_failed"))
-
-		// Record database error
-		if h.businessMetrics != nil {
-			h.businessMetrics.DBOperationErrors.Add(spanCtx, 1,
-				metric.WithAttributes(
-					attribute.String("operation", "create_sale_unit"),
-					attribute.String("error_type", "insert_failed"),
-				))
-		}
-
 		slog.Error("Could not create sale unit: ", slog.Any("err", err.Error()))
+		span.RecordError(err)
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to create sale unit",
 		})
 		return
 	}
 
-	// Record successful creation
-	if h.businessMetrics != nil {
-		h.businessMetrics.SaleUnitCreated.Add(spanCtx, 1,
-			metric.WithAttributes(
-				attribute.String("sale_unit_name", saleUnit.Name),
-				attribute.Int64("sale_unit_id", int64(saleUnit.ID)),
-			))
-
-		// Increment active sale units counter
-		h.businessMetrics.ActiveSaleUnits.Add(spanCtx, 1,
-			metric.WithAttributes(attribute.String("operation", "created")))
+	// Record successful creation (Prometheus)
+	if h.prometheusMetrics != nil {
+		h.prometheusMetrics.RecordSaleUnitOperation("create", saleUnit.ID)
+		h.prometheusMetrics.UpdateSaleUnitsCount(1)
 	}
 
 	// Record successful operation
 	span.SetAttributes(
-		attribute.String("saleUnit.created_name", saleUnit.Name),
-		attribute.Int64("saleUnit.created_id", int64(saleUnit.ID)),
+		attribute.Int64("saleUnit.id", int64(saleUnit.ID)),
 		attribute.String("operation.status", "success"),
 	)
 
@@ -437,33 +199,107 @@ func (h *Handlers) CreateSaleUnit(ctx *gin.Context) {
 	})
 }
 
-// func (h *Handlers) DeleteStorageRoom(ctx *gin.Context) {
-// 	_, existed := ctx.Get("claims")
-// 	if !existed {
-// 		ctx.JSON(http.StatusInternalServerError, gin.H{
-// 			"error": "Claims not found in context",
-// 		})
-// 		return
-// 	}
+func (h *Handlers) UpdateSaleUnit(ctx *gin.Context) {
+	// Start a new span for this operation
+	_, span := h.tracer.Start(ctx.Request.Context(), "UpdateSaleUnit")
+	defer span.End()
 
-// 	idStr := ctx.Param("id")
-// 	id, err := strconv.ParseInt(idStr, 10, 32)
-// 	if err != nil {
-// 		ctx.JSON(http.StatusBadRequest, gin.H{
-// 			"error": "Invalid storage room ID format",
-// 		})
-// 		return
-// 	}
+	id, ok := utils.ParseSaleUnitID(ctx, "update sale unit: ")
+	if !ok {
+		return
+	}
 
-// 	err = h.queries.DeleteStorageRoom(ctx, int32(id))
-// 	if err != nil {
-// 		slog.Error("Failed to delete storage room: ", slog.Any("err", err.Error()))
-// 		ctx.JSON(http.StatusInternalServerError, gin.H{
-// 			"error": "Failed to delete storage room",
-// 		})
-// 		return
-// 	} else {
-// 		ctx.JSON(200, gin.H{"message": "Delete Storage Room Successfully"})
-// 	}
+	posID, price, recipeID, orderID, ok := utils.SaleFormFields(ctx, "update sale unit: ", &id)
+	if !ok {
+		return
+	}
 
-// }
+	params := models.UpdateSaleUnitParams{
+		ID:       id,
+		PosID:    posID,
+		Price:    price,
+		RecipeID: recipeID,
+		OrderID:  orderID,
+	}
+
+	span.SetAttributes(
+		attribute.Int64("saleUnit.pos_id", int64(posID)),
+		attribute.Int64("saleUnit.price", int64(price)),
+		attribute.Int64("saleUnit.recipe_id", int64(recipeID)),
+		attribute.Int64("saleUnit.order_id", int64(orderID)),
+	)
+
+	dbStart := time.Now()
+	saleUnit, err := h.queries.UpdateSaleUnit(ctx, params)
+	dbDuration := time.Since(dbStart)
+
+	// Record database operation duration (Prometheus)
+	if h.prometheusMetrics != nil {
+		h.prometheusMetrics.RecordDBOperation("update", "sale_units", dbDuration, err)
+	}
+
+	if err != nil {
+		slog.Error("failed to update sale unit", slog.Int64("sale.id", id), slog.Any("err", err))
+		span.RecordError(err)
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to update sale unit",
+		})
+		return
+	}
+
+	// Record successful update (Prometheus)
+	if h.prometheusMetrics != nil {
+		h.prometheusMetrics.RecordSaleUnitOperation("update", saleUnit.ID)
+	}
+
+	span.SetAttributes(attribute.String("operation.status", "success"))
+
+	slog.Info("order updated", slog.Int64("sale.id", id), slog.Int64("sale.pos_id", int64(saleUnit.PosID)))
+	ctx.JSON(200, gin.H{
+		"message": "Update Sale Unit Successfully",
+		"data":    saleUnit,
+	})
+}
+
+func (h *Handlers) DeleteSaleUnit(ctx *gin.Context) {
+	// Start a new span for this operation
+	_, span := h.tracer.Start(ctx.Request.Context(), "DeleteSaleUnit")
+	defer span.End()
+
+	id, ok := utils.ParseSaleUnitID(ctx, "delete sale unit: ")
+	if !ok {
+		return
+	}
+
+	span.SetAttributes(attribute.Int64("saleUnit.id", id))
+
+	dbStart := time.Now()
+	err := h.queries.DeleteSaleUnit(ctx, id)
+	dbDuration := time.Since(dbStart)
+
+	// Record database operation duration (Prometheus)
+	if h.prometheusMetrics != nil {
+		h.prometheusMetrics.RecordDBOperation("delete", "sale_units", dbDuration, err)
+	}
+
+	if err != nil {
+		slog.Error("failed to delete sale unit", slog.Int64("sale.id", id), slog.Any("err", err))
+		span.RecordError(err)
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to delete sale unit",
+		})
+		return
+	}
+
+	// Record successful deletion (Prometheus)
+	if h.prometheusMetrics != nil {
+		h.prometheusMetrics.RecordSaleUnitOperation("delete", id)
+	}
+
+	span.SetAttributes(attribute.String("operation.status", "success"))
+
+	slog.Info("sale unit deleted", slog.Int64("sale.id", id))
+	ctx.JSON(200, gin.H{
+		"message": "Delete Sale Unit Successfully",
+	})
+}

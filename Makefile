@@ -1,17 +1,17 @@
 postgres:
-	podman run --network inventium --name postgres -e POSTGRES_USER=root -e POSTGRES_PASSWORD=secret -p 5432:5432 -d --volume postgres:/var/lib/postgresql/data:Z postgres:16-alpine
+	podman run --network inventium --name postgres -e POSTGRES_USER="$(DB_USER)" -e POSTGRES_PASSWORD="$(DB_PASSWORD)" -p 5432:5432 -d postgres:16-alpine
 createdb:
-	podman exec -it postgres createdb --username=root --owner=root sale-service
+	podman exec -it postgres createdb --username="$(DB_USER)" --owner=root sale_service
 dropdb:
-	podman exec -it postgres dropdb --username=root sale-service
+	podman exec -it postgres dropdb --username="$(DB_USER)" sale_service
 migrateup:
-	migrate -path ./models/migration -database "postgresql://root:secret@localhost:5432/sale-service?sslmode=disable" -verbose up
+	migrate -path ./models/migration -database "$(DB_SOURCE)" -verbose up
 migratedown:
-	migrate -path ./models/migration -database "postgresql://root:secret@localhost:5432/sale-service?sslmode=disable" -verbose down
+	migrate -path ./models/migration -database "$(DB_SOURCE)" -verbose down
 sqlc:
 	sqlc generate --no-remote
 loaddata:
-	PGPASSWORD=secret psql -h localhost -U root -d inventium -f data/sql/inventium.sql
+	PGPASSWORD="$(DB_PASSWORD)" psql -h "$(DB_HOST)" -p 16677 -U "$(DB_USER)" -d sale_service -f data/sql/inventium.sql
 runcontainer:
-	podman run --network inventium --name sale-service -p 15350:15350 -d -e DB_SOURCE="postgresql://root:secret@postgres-1:5432/sale-service?sslmode=disable" -e CLERK_KEY="sk_test_XhHg2KNAIqm9I65JwOgQbLajZj6UqeeLTnpjx1p4oa" sale-service:1.0.0
+	podman run --network inventium --name sale-service -p 15350:15350 -d -e DB_SOURCE="postgresql://$(DB_USER):$(DB_PASSWORD)@postgres:5432/sale_service?sslmode=disable" sale-service:1.0.0
 .PHONY: postgres createdb dropdb migrateup migratedown sqlc loaddata runcontainer

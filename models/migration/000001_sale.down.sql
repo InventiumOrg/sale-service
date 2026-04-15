@@ -1,2 +1,1 @@
-DROP TABLE IF EXISTS sale_unit;
-DROP TABLE IF EXISTS sale_recipe;
+DROP TABLE IF EXISTS sale;

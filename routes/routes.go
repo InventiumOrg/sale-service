@@ -2,7 +2,6 @@ package routes
 
 import (
 	handlers "sale-service/handlers"
-	"sale-service/middlewares"
 	"sale-service/observability"
 
 	"github.com/gin-gonic/gin"
@@ -14,10 +13,10 @@ type Route struct {
 	handlers *handlers.Handlers
 }
 
-func NewRoute(db *pgx.Conn, businessMetrics *observability.BusinessMetrics) *Route {
+func NewRoute(db *pgx.Conn, prometheusMetrics *observability.PrometheusMetrics) *Route {
 	return &Route{
 		db:       db,
-		handlers: handlers.NewHandlers(db, businessMetrics),
+		handlers: handlers.NewHandlers(db, prometheusMetrics),
 	}
 }
 
@@ -25,14 +24,12 @@ func (r *Route) AddSaleRoutes(router *gin.Engine) {
 	v1 := router.Group("/v1")
 	{
 		sale := v1.Group("/sale")
-		sale.Use(middlewares.ClerkAuth(r.db))
 		{
 			sale.GET("/:id", r.handlers.GetSaleUnit)
 			sale.GET("/list", r.handlers.ListSaleUnit)
 			sale.POST("/create", r.handlers.CreateSaleUnit)
-			// TODO: Add update and delete handlers when implemented
-			// sale.PUT("/:id", r.handlers.UpdateSaleUnit)
-			// sale.DELETE("/:id", r.handlers.DeleteSaleUnit)
+			sale.PUT("/:id", r.handlers.UpdateSaleUnit)
+			sale.DELETE("/:id", r.handlers.DeleteSaleUnit)
 		}
 	}
 }
