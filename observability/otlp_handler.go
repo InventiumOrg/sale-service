@@ -186,7 +186,11 @@ func (h *OTLPHandler) sendToOTLP(record slog.Record) {
 	if err != nil {
 		return
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			slog.Error("failed to close response body", slog.Any("err", err))
+		}
+	}()
 }
 
 // slogLevelToOTLP converts slog level to OTLP severity number
