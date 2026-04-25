@@ -22,10 +22,10 @@ func ParseSaleUnitID(ctx *gin.Context, rejectPrefix string) (id int64, ok bool) 
 }
 
 func SaleFormFields(ctx *gin.Context, rejectPrefix string, saleID *int64) (orderID, posID, price, recipeID int32, ok bool) {
-	posIDStr := ctx.Param("PosID")
-	priceStr := ctx.Param("Price")
-	recipeIDStr := ctx.Param("RecipeID")
-	orderIDStr := ctx.Param("OrderID")
+	posIDStr := ctx.PostForm("PosID")
+	priceStr := ctx.PostForm("Price")
+	recipeIDStr := ctx.PostForm("RecipeID")
+	orderIDStr := ctx.PostForm("OrderID")
 	if posIDStr == "" || priceStr == "" || recipeIDStr == "" || orderIDStr == "" {
 		args := []any{
 			slog.Bool("has_pos_id", posIDStr != ""),
@@ -36,9 +36,9 @@ func SaleFormFields(ctx *gin.Context, rejectPrefix string, saleID *int64) (order
 		if saleID != nil {
 			args = append([]any{slog.Int64("sale.id", *saleID)}, args...)
 		}
-		slog.Info(rejectPrefix+": missing parameters", args...)
+		slog.Info(rejectPrefix+": missing request data", args...)
 		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": "Missing required parameters: pos_id, price, recipe_id, order_id",
+			"error": "Missing request data: pos_id, price, recipe_id, order_id",
 		})
 		return 0, 0, 0, 0, false
 	}

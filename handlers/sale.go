@@ -138,12 +138,7 @@ func (h *Handlers) CreateSaleUnit(ctx *gin.Context) {
 	_, span := h.tracer.Start(ctx.Request.Context(), "CreateSaleUnit")
 	defer span.End()
 
-	id, ok := utils.ParseSaleUnitID(ctx, "create sale unit rejected")
-	if !ok {
-		return
-	}
-
-	posID, price, recipeID, orderID, ok := utils.SaleFormFields(ctx, "create sale unit rejected", &id)
+	posID, price, recipeID, orderID, ok := utils.SaleFormFields(ctx, "create sale unit rejected", nil)
 	if !ok {
 		return
 	}
